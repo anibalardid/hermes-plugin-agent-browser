@@ -10,95 +10,104 @@ metadata:
 
 # Agent Browser Plugin Usage Guide
 
-You have 14 browser tools. Always start with `browser_open` + `browser_snapshot` before interacting with anything.
+You have two browser options, in order of priority:
 
-## Tool Selection
+## OPTION 1: Hermes native browser (PRIMARY)
 
-**"Go to / open / navigate to [url]"** → `browser_open`
-**"What's on the page? / read the page / inspect"** → `browser_snapshot` (returns accessibility tree with @eN refs)
-**"Click [button/link/element]"** → `browser_click` with `@eN` ref from snapshot
-**"Fill in / type in [field]"** → `browser_fill` (replaces content) or `browser_type` (appends)
-**"Press Enter / Tab / Escape"** → `browser_press`
-**"Get the text / title / URL / value"** → `browser_get`
-**"Find a button by name / find input by label"** → `browser_find` (semantic locators, no selector needed)
-**"Wait for page to load / wait for element"** → `browser_wait`
-**"Scroll down / scroll up"** → `browser_scroll`
-**"Take a screenshot"** → `browser_screenshot`
-**"Run JavaScript"** → `browser_eval`
-**"Do multiple steps at once"** → `browser_batch` (faster, avoids per-command startup overhead)
-**"Close / quit the browser"** → `browser_close`
+Available tools:
+- `browser_navigate` → Open URL
+- `browser_snapshot` → View content (accessibility tree with @eN refs)
+- `browser_vision` → Analyze screenshot with AI (IF snapshot is not enough)
+- `browser_click`, `browser_fill`, `browser_type`, `browser_press`, `browser_scroll`
+- `browser_close`
 
-## IMPORTANT: Only these 14 tools exist
+**Standard flow:**
+```
+browser_navigate(url) → browser_snapshot() → browser_vision(question) if needed
+```
 
-`browser_open`, `browser_snapshot`, `browser_click`, `browser_fill`, `browser_type`,
-`browser_press`, `browser_get`, `browser_find`, `browser_wait`, `browser_scroll`,
-`browser_screenshot`, `browser_eval`, `browser_batch`, `browser_close`
+## OPTION 2: agent-browser CLI (FALLBACK)
 
-Do NOT try to call any other tool names.
+When browser_navigate fails or returns incomplete content (SPA/JavaScript), or if the user explicitly asks to "use agent-browser", use the `agent-browser` CLI:
 
-## Rules
+```bash
+# Open and read page
+agent-browser open "<url>"
+agent-browser snapshot
 
-1. **Always snapshot first.** After `browser_open` or any action that changes the page, call `browser_snapshot` to see the current state and get fresh `@eN` refs.
-2. **Use refs, not guesses.** Prefer `@eN` refs from the snapshot over CSS selectors or text. Refs are stable for the current page state.
-3. **Wait after navigation.** After clicking a link or submitting a form, use `browser_wait` before snapshotting again.
-4. **Use `browser_find` for semantic elements.** When you know a button's label or an input's placeholder, `browser_find` is more reliable than CSS selectors.
-5. **Use `browser_batch` for known sequences.** When you have a predictable multi-step flow (open → fill → click → screenshot), batch them for efficiency.
-6. **Use `browser_fill` over `browser_type`** unless the app specifically requires keystroke events (autocomplete dropdowns, etc.).
-7. **Don't screenshot unnecessarily.** Only call `browser_screenshot` when the user asks to see something visually.
-8. **Always close when done.** Call `browser_close` at the end of a task to release resources.
+# Close
+agent-browser close
+```
+
+**Note:** The `agent-browser` CLI is the binary that powers this plugin. If the user asks for "agent-browser", execute it via terminal.
+
+---
+
+## RULES
+
+1. **Always try browser_navigate first** (faster)
+2. **If content doesn't load or is incomplete, use agent-browser as fallback**
+3. **If agent-browser also has issues, use execute_code + regex**
+
+## When to use FALLBACK (agent-browser CLI)
+
+- browser_snapshot returns only navigation/headers without article content
+- Site is a SPA (Single Page App) that loads via JavaScript
+- Paywall appears without actual content
+- You tried browser_navigate + browser_vision and it still doesn't work
+- **User explicitly asks to "use agent-browser"**
+
+## Complete workflow with fallback
+
+```
+1. browser_navigate(url) + browser_snapshot()
+2. If content incomplete:
+   → agent-browser open <url> + agent-browser snapshot
+3. If still not working:
+   → terminal + execute_code to extract with regex from HTML
+```
+
+## Common Issues & Workarounds
+
+### browser_navigate returns incomplete content (SPA/JavaScript)
+When `browser_snapshot` returns only navigation without actual content, or paywall appears:
+
+**Step 1:** Try `browser_vision` to analyze the screenshot directly
+
+**Step 2:** If still not working, use `agent-browser` CLI as fallback:
+```bash
+agent-browser open "<url>"
+agent-browser snapshot
+agent-browser close
+```
+
+**Step 3:** If `agent-browser` also has issues, use `execute_code` with regex:
+```python
+import urllib.request, re, ssl
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+html = urllib.request.urlopen(req, timeout=15, context=ctx).read().decode('utf-8', errors='replace')
+text = re.sub(r'<[^>]+>', ' ', html)
+text = re.sub(r'\s+', ' ', text)
+idx = text.lower().find('keyword')
+print(text[max(0,idx-500):idx+3000])
+```
 
 ## Common Workflows
 
 ### Navigate and read a page
 ```
-browser_open(url) → browser_snapshot() → browser_get(what="text", selector="@e1")
+browser_navigate(url) → browser_snapshot() → browser_vision(question) if needed
 ```
 
 ### Fill and submit a form
 ```
-browser_open(url) → browser_snapshot() → browser_fill(@eN, text) → browser_press("Enter") → browser_wait(load="networkidle") → browser_snapshot()
+browser_navigate(url) → browser_snapshot() → browser_fill(@eN, text) → browser_press("Enter") → browser_snapshot()
 ```
 
-### Click a button by label (no snapshot needed)
+### Close browser when done
 ```
-browser_find(by="role", value="button", action="click", name="Submit")
+browser_close()
 ```
-
-### Extract a value from a page
-```
-browser_open(url) → browser_snapshot() → browser_get(what="text", selector="@eN")
-```
-
-### Login to a site
-```
-browser_open(url) → browser_snapshot() →
-browser_find(by="label", value="Email", action="fill", fill_value="user@example.com") →
-browser_find(by="label", value="Password", action="fill", fill_value="...") →
-browser_press("Enter") → browser_wait(url="**/dashboard")
-```
-
-### Batch example (fast multi-step)
-```
-browser_batch(commands=[
-  ["open", "https://example.com"],
-  ["snapshot"],
-  ["fill", "@e3", "search term"],
-  ["press", "Enter"],
-  ["wait", "--load", "networkidle"],
-  ["screenshot", "/tmp/result.png"]
-])
-```
-
-## Selector Formats
-
-| Format | Example | When to use |
-|--------|---------|-------------|
-| `@eN` ref | `@e5` | Best — from snapshot, stable for current state |
-| CSS selector | `#submit`, `.btn` | When ref not available |
-| `browser_find` | `by="role"` + `value="button"` | When you know the element's purpose, not its ref |
-
-## Notes on `browser_get`
-
-- `what="title"` and `what="url"` don't need a selector
-- `what="attr"` requires both `selector` and `attr` (e.g. `attr="href"`)
-- `what="count"` returns the number of elements matching the selector
