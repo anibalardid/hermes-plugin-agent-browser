@@ -6,7 +6,12 @@ A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin for headle
 
 ```bash
 cd ~/.hermes/plugins
-git clone https://github.com/your-org/hermes-agent-browser-plugin agent-browser
+git clone git@github.com:anibalardid/hermes-plugin-agent-browser.git agent-browser
+```
+
+## Validate (enable or disable)
+```bash
+hermes plugins list
 ```
 
 Restart Hermes — the plugin loads automatically. Verify with `/plugins`.
