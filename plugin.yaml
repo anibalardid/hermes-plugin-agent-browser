@@ -1,0 +1,10 @@
+name: agent-browser
+version: 1.0.0
+description: >
+  Headless browser automation for Hermes using agent-browser (Vercel Labs).
+  Navigate pages, interact with elements, scrape content, take screenshots,
+  and run multi-step web workflows via a fast native Rust CLI.
+author: hermes-agent-browser-plugin
+provides:
+  tools: true
+  hooks: false
