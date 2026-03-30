@@ -9,6 +9,11 @@ cd ~/.hermes/plugins
 git clone git@github.com:anibalardid/hermes-plugin-agent-browser.git agent-browser
 ```
 
+## Validate (enable or disable)
+```bash
+hermes plugins list
+```
+
 Restart Hermes — the plugin loads automatically. Verify with `/plugins`.
 
 ## Prerequisites
